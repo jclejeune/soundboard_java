@@ -18,7 +18,7 @@ public class SoundBoardUI {
             new SoundPad("Slap", "sounds/slap.wav"),
             new SoundPad("HiHat", "sounds/hihat.wav"),
             new SoundPad("Clap", "sounds/clap.wav"),
-            new SoundPad("Snare", "sounds/snare.wav"),
+            new SoundPad("Healing", "sounds/healing.wav"),
             new SoundPad("Netflix", "sounds/netflix.wav"),
             new SoundPad("Lazer", "sounds/lazer.wav"),
         };
