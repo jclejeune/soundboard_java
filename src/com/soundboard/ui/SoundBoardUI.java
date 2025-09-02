@@ -7,82 +7,136 @@ import com.soundboard.model.SoundPad;
 import com.soundboard.model.SoundKit;
 import com.soundboard.model.KitManager;
 import com.soundboard.audio.SoundPlayer;
+import com.soundboard.sequencer.SequencerEngine;
 import javax.swing.border.Border;
 import java.util.List;
 
-public class SoundBoardUI {
+public class SoundBoardUI implements SequencerEngine.StepListener {
     private JFrame frame;
     private SoundPlayer player = new SoundPlayer();
     private KitManager kitManager = new KitManager();
+    private SequencerEngine sequencer;
+    
+    // UI Components
     private JComboBox<String> kitSelector;
     private JButton[] padButtons = new JButton[9];
     private JLabel currentKitLabel;
+    
+    // Sequencer UI Components
+    private JButton playStopButton;
+    private JButton clearButton;
+    private JSpinner bpmSpinner;
+    private JSpinner lengthSpinner;
+    private JLabel currentStepLabel;
+    private JButton[][] stepButtons = new JButton[9][16]; // [pad][step]
+    private JPanel sequencerPanel;
+    
+    // Mode toggle
+    private JToggleButton modeToggle;
+    private boolean sequencerMode = false;
 
     public void createUI() {
         DarkTheme.apply();
+        
+        // Initialiser le séquenceur
+        sequencer = new SequencerEngine(player);
+        sequencer.setStepListener(this);
 
         frame = new JFrame("WakoSound");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setLayout(new BorderLayout());
 
-        // Panel principal avec le sélecteur de kit en haut
+        // Panels
         createTopPanel();
-        
-        // Panel central avec la grille de pads
-        createPadGrid();
-        
-        // Label d'info en bas
+        createCenterPanel();
         createBottomPanel();
 
-        frame.setSize(450, 500);
+        frame.setSize(800, 600); // Plus large pour le séquenceur
         frame.setVisible(true);
         
         // Charger le kit par défaut
         loadCurrentKit();
+        updateSequencerKit();
+    }
+
+    // 🎨 Méthode pour rafraîchir toute la grille visuelle
+    private void refreshStepGrid() {
+        for (int pad = 0; pad < 9; pad++) {
+            for (int step = 0; step < 16; step++) {
+                updateStepButton(pad, step);
+            }
+        }
     }
 
     private void createTopPanel() {
-        JPanel topPanel = new JPanel(new FlowLayout());
+        JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         topPanel.setBackground(DarkTheme.BACKGROUND);
         
-        // Label pour le sélecteur
+        // Sélecteur de kit
         JLabel kitLabel = new JLabel("Kit:");
         kitLabel.setForeground(DarkTheme.FOREGROUND);
         topPanel.add(kitLabel);
         
-        // Sélecteur de kit
         kitSelector = new JComboBox<>();
         kitSelector.setBackground(DarkTheme.BUTTON_BG);
         kitSelector.setForeground(DarkTheme.BUTTON_FG);
         
-        // Remplir le sélecteur avec les kits disponibles
         for (String kitName : kitManager.getKitNames()) {
             kitSelector.addItem(kitName);
         }
         
-        // Listener pour changement de kit
         kitSelector.addActionListener(e -> {
             String selectedKit = (String) kitSelector.getSelectedItem();
             if (selectedKit != null && kitManager.switchToKit(selectedKit)) {
                 loadCurrentKit();
+                updateSequencerKit();
                 updateCurrentKitLabel();
             }
         });
         
         topPanel.add(kitSelector);
         
+        // Séparateur
+        topPanel.add(new JSeparator(SwingConstants.VERTICAL));
+        
+        // Toggle Mode
+        modeToggle = new JToggleButton("Sequencer Mode");
+        modeToggle.setBackground(DarkTheme.BUTTON_BG);
+        modeToggle.setForeground(DarkTheme.BUTTON_FG);
+        modeToggle.setFocusPainted(false);
+        modeToggle.addActionListener(e -> toggleMode());
+        topPanel.add(modeToggle);
+        
         frame.add(topPanel, BorderLayout.NORTH);
     }
 
-    private void createPadGrid() {
+    private void createCenterPanel() {
+        JPanel centerPanel = new JPanel(new BorderLayout());
+        centerPanel.setBackground(DarkTheme.BACKGROUND);
+        
+        // Panel des pads (toujours visible)
+        createPadGrid();
+        centerPanel.add(createPadGridPanel(), BorderLayout.WEST);
+        
+        // Panel du séquenceur (initialement caché)
+        createSequencerPanel();
+        centerPanel.add(sequencerPanel, BorderLayout.CENTER);
+        
+        frame.add(centerPanel, BorderLayout.CENTER);
+        
+        // Ajouter les raccourcis clavier
+        addKeyBindings();
+    }
+
+    private JPanel createPadGridPanel() {
         JPanel gridPanel = new JPanel(new GridLayout(3, 3, 2, 2));
         gridPanel.setBackground(DarkTheme.BACKGROUND);
+        gridPanel.setPreferredSize(new Dimension(300, 300));
         
-        // Créer les 9 boutons de pads
         for (int i = 0; i < 9; i++) {
             JButton btn = new JButton();
             
-            // Style des boutons (comme avant)
+            // Style des boutons
             btn.setFocusPainted(false);
             btn.setFocusable(false);
             btn.setContentAreaFilled(false);
@@ -90,7 +144,6 @@ public class SoundBoardUI {
             btn.setBackground(DarkTheme.BUTTON_BG);
             btn.setForeground(DarkTheme.BUTTON_FG);
             
-            // Bordure noire
             Border blackBorder = BorderFactory.createLineBorder(Color.BLACK, 2);
             btn.setBorder(blackBorder);
             btn.setBorderPainted(true);
@@ -99,10 +152,115 @@ public class SoundBoardUI {
             gridPanel.add(btn);
         }
         
-        frame.add(gridPanel, BorderLayout.CENTER);
+        return gridPanel;
+    }
+
+    private void createPadGrid() {
+        // Déjà fait dans createPadGridPanel()
+    }
+
+    private void createSequencerPanel() {
+        sequencerPanel = new JPanel(new BorderLayout());
+        sequencerPanel.setBackground(DarkTheme.BACKGROUND);
+        sequencerPanel.setBorder(BorderFactory.createTitledBorder(
+            BorderFactory.createLineBorder(DarkTheme.BORDER), 
+            "Sequencer",
+            0, 0, null, DarkTheme.FOREGROUND));
         
-        // Ajouter les raccourcis clavier
-        addKeyBindings();
+        // Transport controls
+        JPanel transportPanel = new JPanel(new FlowLayout());
+        transportPanel.setBackground(DarkTheme.BACKGROUND);
+        
+        playStopButton = DarkTheme.createStyledButton("▶ Play");
+        playStopButton.addActionListener(e -> togglePlayStop());
+        transportPanel.add(playStopButton);
+        
+        clearButton = DarkTheme.createStyledButton("Clear");
+        clearButton.addActionListener(e -> {
+            System.out.println("Clear button clicked!");
+            sequencer.clearPattern();
+            System.out.println("About to refresh grid...");
+            refreshStepGrid(); 
+            System.out.println("Grid refreshed!");
+        });
+        transportPanel.add(clearButton);
+        
+        // BPM Control
+        transportPanel.add(new JLabel("BPM:") {{ setForeground(DarkTheme.FOREGROUND); }});
+        bpmSpinner = new JSpinner(new SpinnerNumberModel(120, 1, 999, 1));
+        bpmSpinner.addChangeListener(e -> sequencer.setBpm((Integer) bpmSpinner.getValue()));
+        transportPanel.add(bpmSpinner);
+        
+        // Length Control
+        transportPanel.add(new JLabel("Steps:") {{ setForeground(DarkTheme.FOREGROUND); }});
+        lengthSpinner = new JSpinner(new SpinnerNumberModel(16, 1, 16, 1));
+        lengthSpinner.addChangeListener(e -> sequencer.setPatternLength((Integer) lengthSpinner.getValue()));
+        transportPanel.add(lengthSpinner);
+        
+        // Current Step
+        currentStepLabel = new JLabel("Step: 0");
+        currentStepLabel.setForeground(DarkTheme.STATUS_FG);
+        currentStepLabel.setFont(new Font("Monospaced", Font.BOLD, 14));
+        transportPanel.add(currentStepLabel);
+        
+        sequencerPanel.add(transportPanel, BorderLayout.NORTH);
+        
+        // Step Grid
+        createStepGrid();
+        
+        // Initialement caché
+        sequencerPanel.setVisible(false);
+    }
+
+    private void createStepGrid() {
+        JPanel gridPanel = new JPanel(new GridBagLayout());
+        gridPanel.setBackground(DarkTheme.BACKGROUND);
+        GridBagConstraints gbc = new GridBagConstraints();
+        
+        // Headers pour les steps
+        gbc.gridy = 0;
+        for (int step = 0; step < 16; step++) {
+            gbc.gridx = step + 1;
+            JLabel stepLabel = new JLabel(String.valueOf(step + 1));
+            stepLabel.setForeground(DarkTheme.FOREGROUND);
+            stepLabel.setHorizontalAlignment(JLabel.CENTER);
+            stepLabel.setPreferredSize(new Dimension(30, 20));
+            gridPanel.add(stepLabel, gbc);
+        }
+        
+        // Rows pour chaque pad
+        for (int pad = 0; pad < 9; pad++) {
+            gbc.gridy = pad + 1;
+            
+            // Label du pad
+            gbc.gridx = 0;
+            JLabel padLabel = new JLabel("Pad " + (pad + 1));
+            padLabel.setForeground(DarkTheme.FOREGROUND);
+            padLabel.setPreferredSize(new Dimension(60, 25));
+            gridPanel.add(padLabel, gbc);
+            
+            // Boutons steps
+            for (int step = 0; step < 16; step++) {
+                gbc.gridx = step + 1;
+                JButton stepBtn = new JButton();
+                stepBtn.setPreferredSize(new Dimension(25, 25));
+                stepBtn.setBackground(DarkTheme.BUTTON_BG.darker());
+                stepBtn.setFocusPainted(false);
+                stepBtn.setBorder(BorderFactory.createLineBorder(Color.BLACK, 1));
+                
+                final int padIndex = pad;
+                final int stepIndex = step;
+                
+                stepBtn.addActionListener(e -> toggleStep(padIndex, stepIndex));
+                
+                stepButtons[pad][step] = stepBtn;
+                gridPanel.add(stepBtn, gbc);
+            }
+        }
+        
+        JScrollPane scrollPane = new JScrollPane(gridPanel);
+        scrollPane.setBackground(DarkTheme.BACKGROUND);
+        sequencerPanel.add(scrollPane, BorderLayout.CENTER);
     }
 
     private void createBottomPanel() {
@@ -117,6 +275,83 @@ public class SoundBoardUI {
         frame.add(bottomPanel, BorderLayout.SOUTH);
     }
 
+    private void toggleMode() {
+        sequencerMode = modeToggle.isSelected();
+        sequencerPanel.setVisible(sequencerMode);
+        
+        if (sequencerMode) {
+            modeToggle.setText("Soundboard Mode");
+            frame.setSize(800, 600);
+        } else {
+            modeToggle.setText("Sequencer Mode");
+            frame.setSize(450, 500);
+            sequencer.stop(); // Arrêter le séquenceur si on retourne en mode soundboard
+        }
+        
+        frame.revalidate();
+        frame.repaint();
+    }
+
+    private void toggleStep(int padIndex, int stepIndex) {
+        sequencer.toggleStep(padIndex, stepIndex);
+        updateStepButton(padIndex, stepIndex);
+    }
+
+    private void updateStepButton(int padIndex, int stepIndex) {
+        if (stepButtons[padIndex][stepIndex] != null) {
+            boolean active = sequencer.getStep(padIndex, stepIndex);
+            System.out.println("Updating button [" + padIndex + "][" + stepIndex + "] to " + active);
+            stepButtons[padIndex][stepIndex].setBackground(
+                active ? Color.ORANGE : DarkTheme.BUTTON_BG.darker()
+            );
+        }
+    }
+
+    private void togglePlayStop() {
+        if (sequencer.isPlaying()) {
+            sequencer.stop();
+            playStopButton.setText("▶ Play");
+        } else {
+            sequencer.play();
+            playStopButton.setText("⏸ Stop");
+        }
+    }
+
+    private void updateSequencerKit() {
+        sequencer.setCurrentKit(kitManager.getCurrentKit());
+        updatePadLabels();
+    }
+
+    private void updatePadLabels() {
+        SoundKit currentKit = kitManager.getCurrentKit();
+        if (currentKit != null && sequencerPanel.isVisible()) {
+            List<SoundPad> pads = currentKit.getPads();
+            // Mettre à jour les labels des pads dans la grille du séquenceur
+            // (Implémentation détaillée si nécessaire)
+        }
+    }
+
+    // Implementation de StepListener
+    @Override
+    public void onStepChanged(int step) {
+        SwingUtilities.invokeLater(() -> {
+            currentStepLabel.setText("Step: " + (step + 1));
+            
+            // Highlight current step
+            for (int pad = 0; pad < 9; pad++) {
+                for (int s = 0; s < 16; s++) {
+                    if (stepButtons[pad][s] != null) {
+                        Border border = (s == step) ? 
+                            BorderFactory.createLineBorder(Color.RED, 2) :
+                            BorderFactory.createLineBorder(Color.BLACK, 1);
+                        stepButtons[pad][s].setBorder(border);
+                    }
+                }
+            }
+        });
+    }
+
+    // Méthodes existantes adaptées
     private void loadCurrentKit() {
         SoundKit currentKit = kitManager.getCurrentKit();
         if (currentKit == null) {
@@ -126,32 +361,15 @@ public class SoundBoardUI {
         
         List<SoundPad> pads = currentKit.getPads();
         
-        // Mettre à jour chaque bouton
         for (int i = 0; i < 9; i++) {
             JButton btn = padButtons[i];
             
             if (i < pads.size()) {
-                // Il y a un pad pour cette position
                 SoundPad pad = pads.get(i);
                 btn.setText(pad.getName());
                 btn.setEnabled(true);
-                
-                // Couleur personnalisée si disponible (pour la version enrichie de SoundPad)
-                try {
-                    if (pad.getClass().getMethod("hasCustomColor") != null && 
-                        (Boolean) pad.getClass().getMethod("hasCustomColor").invoke(pad)) {
-                        Color customColor = (Color) pad.getClass().getMethod("getCustomColor").invoke(pad);
-                        btn.setBackground(customColor);
-                    } else {
-                        btn.setBackground(DarkTheme.BUTTON_BG);
-                    }
-                } catch (Exception e) {
-                    // Fallback si SoundPad n'a pas les méthodes enrichies
-                    btn.setBackground(DarkTheme.BUTTON_BG);
-                }
-                
+                btn.setBackground(DarkTheme.BUTTON_BG);
             } else {
-                // Pas de pad pour cette position
                 btn.setText("Empty");
                 btn.setEnabled(false);
                 btn.setBackground(DarkTheme.BUTTON_BG.darker());
@@ -174,7 +392,6 @@ public class SoundBoardUI {
     private void addKeyBindings() {
         JPanel panel = (JPanel) frame.getContentPane();
 
-        // Touches du pavé numérique (ordre 789 / 456 / 123)
         int[] keys = {
                 KeyEvent.VK_NUMPAD7, KeyEvent.VK_NUMPAD8, KeyEvent.VK_NUMPAD9,
                 KeyEvent.VK_NUMPAD4, KeyEvent.VK_NUMPAD5, KeyEvent.VK_NUMPAD6,
@@ -185,15 +402,12 @@ public class SoundBoardUI {
             final int index = i;
             JButton btn = padButtons[i];
 
-            // Couleur par défaut
             final Color defaultColor = DarkTheme.BUTTON_BG;
 
-            // Listener pour clic souris
             btn.addActionListener(e -> {
                 playPad(index, btn, defaultColor, true);
             });
 
-            // Raccourci clavier
             panel.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
                     .put(KeyStroke.getKeyStroke(keys[i], 0), "play" + i);
 
@@ -212,31 +426,11 @@ public class SoundBoardUI {
         if (currentKit == null) return;
         
         List<SoundPad> pads = currentKit.getPads();
-        if (index >= pads.size()) return; // Pas de pad à cette position
+        if (index >= pads.size()) return;
         
         SoundPad pad = pads.get(index);
         if (pad == null) return;
         
-        // Vérifier si le pad est activé (pour la version enrichie)
-        try {
-            Boolean enabled = (Boolean) pad.getClass().getMethod("isEnabled").invoke(pad);
-            if (!enabled) return;
-        } catch (Exception e) {
-            // Fallback: considérer comme activé
-        }
-        
-        // Valider le fichier
-        try {
-            Boolean valid = (Boolean) pad.getClass().getMethod("isFileValid").invoke(pad);
-            if (!valid) {
-                System.err.println("Invalid audio file: " + pad.getFilePath());
-                return;
-            }
-        } catch (Exception e) {
-            // Fallback: essayer de jouer quand même
-        }
-        
-        // Jouer le son
         player.play(pad.getFilePath());
         flashButton(btn, defaultColor, fromMouse);
     }
@@ -254,22 +448,6 @@ public class SoundBoardUI {
         });
         t.setRepeats(false);
         t.start();
-    }
-
-    // Méthodes publiques pour l'interaction externe
-    public void switchToKit(String kitName) {
-        if (kitManager.switchToKit(kitName)) {
-            loadCurrentKit();
-            kitSelector.setSelectedItem(kitName);
-        }
-    }
-    
-    public void refreshKits() {
-        kitSelector.removeAllItems();
-        for (String kitName : kitManager.getKitNames()) {
-            kitSelector.addItem(kitName);
-        }
-        loadCurrentKit();
     }
 
     public static void main(String[] args) {
