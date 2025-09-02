@@ -92,7 +92,7 @@ public class KitManager {
         
         String[] metalNames = {
             "MetalKick", "GrindSnare", "Ride", 
-            "china", "Crash", "LowTom", 
+            "China", "Crash", "LowTom", 
             "FX3-Slipknot", "FX2", "FX1"
         };
         
@@ -101,9 +101,35 @@ public class KitManager {
             SoundPad pad = new SoundPad(metalNames[i], fullPath);
             metalKit.addPad(pad);
         }
-        
         addKit(metalKit);
+
+        //-------
+        // Kit test
+        SoundKit testKit = new SoundKit("Test", "Kit Test", SOUNDS_DIRECTORY + "test/");
+
+        String[] testSounds = {
+            "a.wav", "b.wav", "c.wav", 
+            "d.wav", "e.wav", "f.wav", 
+            "g.wav", "h.wav", "i.wav"
+        };
+        
+        String[] testNames = {
+            "A", "B", "C", 
+            "D", "E", "F", 
+            "G", "H", "I"
+        };
+        
+        
+        for (int i = 0; i < testSounds.length; i++) {
+            String fullPath = SOUNDS_DIRECTORY + "test/" + testSounds[i];
+            SoundPad pad = new SoundPad(testNames[i], fullPath);
+            testKit.addPad(pad);
+        }
+        addKit(testKit);
+
+        //------
         currentKit = defaultKit; // Kit par défaut au démarrage
+        //------
     }
     
     // Chargement des kits depuis fichiers (à implémenter plus tard avec JSON)
