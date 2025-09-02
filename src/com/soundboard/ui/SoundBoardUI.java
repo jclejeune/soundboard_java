@@ -2,72 +2,177 @@ package com.soundboard.ui;
 
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.KeyEvent; // ✅ utile car on utilise KeyEvent
+import java.awt.event.KeyEvent;
 import com.soundboard.model.SoundPad;
+import com.soundboard.model.SoundKit;
+import com.soundboard.model.KitManager;
 import com.soundboard.audio.SoundPlayer;
 import javax.swing.border.Border;
+import java.util.List;
 
 public class SoundBoardUI {
     private JFrame frame;
     private SoundPlayer player = new SoundPlayer();
+    private KitManager kitManager = new KitManager();
+    private JComboBox<String> kitSelector;
+    private JButton[] padButtons = new JButton[9];
+    private JLabel currentKitLabel;
 
     public void createUI() {
         DarkTheme.apply();
 
         frame = new JFrame("WakoSound");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setLayout(new GridLayout(3, 3));
+        frame.setLayout(new BorderLayout());
 
-        SoundPad[] pads = {
-                new SoundPad("Kick", "sounds/kick.wav"),
-                new SoundPad("Snare", "sounds/snare.wav"),
-                new SoundPad("Pluck", "sounds/pluck.wav"),
-                new SoundPad("Slap", "sounds/slap.wav"),
-                new SoundPad("HiHat", "sounds/hihat.wav"),
-                new SoundPad("Clap", "sounds/clap.wav"),
-                new SoundPad("Healing", "sounds/healing.wav"),
-                new SoundPad("Netflix", "sounds/netflix.wav"),
-                new SoundPad("Lazer", "sounds/lazer.wav"),
-        };
+        // Panel principal avec le sélecteur de kit en haut
+        createTopPanel();
+        
+        // Panel central avec la grille de pads
+        createPadGrid();
+        
+        // Label d'info en bas
+        createBottomPanel();
 
-        // Boutons
-        for (SoundPad pad : pads) {
-            JButton btn = new JButton(pad.getName());
-
-            // Désactiver le focus visuel
-            btn.setFocusPainted(false);
-            btn.setFocusable(false);
-
-
-            // Désactiver le bouton “content area filled” pour gérer nous-même la couleur
-            btn.setContentAreaFilled(false);
-
-            // Rendre le fond opaque pour que la couleur de fond soit visible
-            btn.setOpaque(true);
-
-            // Couleur de fond par défaut
-            btn.setBackground(UIManager.getColor("Button.background"));
-
-            // Bordure noire interne
-            Border blackBorder = BorderFactory.createLineBorder(Color.BLACK, 2); // 2 px d'épaisseur
-            btn.setBorder(blackBorder);
-
-            // Supprimer la bordure qui change au clic
-            btn.setBorderPainted(true); // maintenant la bordure noire sera toujours visible
-
-            // Ajouter le bouton au frame
-            frame.add(btn);
-        }
-        // Ajout des raccourcis clavier
-        addKeyBindings(pads);
-
-        frame.setSize(400, 400);
+        frame.setSize(450, 500);
         frame.setVisible(true);
+        
+        // Charger le kit par défaut
+        loadCurrentKit();
     }
 
-    private void addKeyBindings(SoundPad[] pads) {
+    private void createTopPanel() {
+        JPanel topPanel = new JPanel(new FlowLayout());
+        topPanel.setBackground(DarkTheme.BACKGROUND);
+        
+        // Label pour le sélecteur
+        JLabel kitLabel = new JLabel("Kit:");
+        kitLabel.setForeground(DarkTheme.FOREGROUND);
+        topPanel.add(kitLabel);
+        
+        // Sélecteur de kit
+        kitSelector = new JComboBox<>();
+        kitSelector.setBackground(DarkTheme.BUTTON_BG);
+        kitSelector.setForeground(DarkTheme.BUTTON_FG);
+        
+        // Remplir le sélecteur avec les kits disponibles
+        for (String kitName : kitManager.getKitNames()) {
+            kitSelector.addItem(kitName);
+        }
+        
+        // Listener pour changement de kit
+        kitSelector.addActionListener(e -> {
+            String selectedKit = (String) kitSelector.getSelectedItem();
+            if (selectedKit != null && kitManager.switchToKit(selectedKit)) {
+                loadCurrentKit();
+                updateCurrentKitLabel();
+            }
+        });
+        
+        topPanel.add(kitSelector);
+        
+        frame.add(topPanel, BorderLayout.NORTH);
+    }
+
+    private void createPadGrid() {
+        JPanel gridPanel = new JPanel(new GridLayout(3, 3, 2, 2));
+        gridPanel.setBackground(DarkTheme.BACKGROUND);
+        
+        // Créer les 9 boutons de pads
+        for (int i = 0; i < 9; i++) {
+            JButton btn = new JButton();
+            
+            // Style des boutons (comme avant)
+            btn.setFocusPainted(false);
+            btn.setFocusable(false);
+            btn.setContentAreaFilled(false);
+            btn.setOpaque(true);
+            btn.setBackground(DarkTheme.BUTTON_BG);
+            btn.setForeground(DarkTheme.BUTTON_FG);
+            
+            // Bordure noire
+            Border blackBorder = BorderFactory.createLineBorder(Color.BLACK, 2);
+            btn.setBorder(blackBorder);
+            btn.setBorderPainted(true);
+            
+            padButtons[i] = btn;
+            gridPanel.add(btn);
+        }
+        
+        frame.add(gridPanel, BorderLayout.CENTER);
+        
+        // Ajouter les raccourcis clavier
+        addKeyBindings();
+    }
+
+    private void createBottomPanel() {
+        JPanel bottomPanel = new JPanel(new FlowLayout());
+        bottomPanel.setBackground(DarkTheme.BACKGROUND);
+        
+        currentKitLabel = new JLabel();
+        currentKitLabel.setForeground(DarkTheme.STATUS_FG);
+        currentKitLabel.setFont(new Font("Monospaced", Font.BOLD, 12));
+        
+        bottomPanel.add(currentKitLabel);
+        frame.add(bottomPanel, BorderLayout.SOUTH);
+    }
+
+    private void loadCurrentKit() {
+        SoundKit currentKit = kitManager.getCurrentKit();
+        if (currentKit == null) {
+            System.err.println("No current kit available!");
+            return;
+        }
+        
+        List<SoundPad> pads = currentKit.getPads();
+        
+        // Mettre à jour chaque bouton
+        for (int i = 0; i < 9; i++) {
+            JButton btn = padButtons[i];
+            
+            if (i < pads.size()) {
+                // Il y a un pad pour cette position
+                SoundPad pad = pads.get(i);
+                btn.setText(pad.getName());
+                btn.setEnabled(true);
+                
+                // Couleur personnalisée si disponible (pour la version enrichie de SoundPad)
+                try {
+                    if (pad.getClass().getMethod("hasCustomColor") != null && 
+                        (Boolean) pad.getClass().getMethod("hasCustomColor").invoke(pad)) {
+                        Color customColor = (Color) pad.getClass().getMethod("getCustomColor").invoke(pad);
+                        btn.setBackground(customColor);
+                    } else {
+                        btn.setBackground(DarkTheme.BUTTON_BG);
+                    }
+                } catch (Exception e) {
+                    // Fallback si SoundPad n'a pas les méthodes enrichies
+                    btn.setBackground(DarkTheme.BUTTON_BG);
+                }
+                
+            } else {
+                // Pas de pad pour cette position
+                btn.setText("Empty");
+                btn.setEnabled(false);
+                btn.setBackground(DarkTheme.BUTTON_BG.darker());
+            }
+        }
+        
+        updateCurrentKitLabel();
+    }
+
+    private void updateCurrentKitLabel() {
+        SoundKit currentKit = kitManager.getCurrentKit();
+        if (currentKit != null) {
+            String info = String.format("Kit: %s | Pads: %d/9", 
+                                      currentKit.getName(), 
+                                      currentKit.getPadCount());
+            currentKitLabel.setText(info);
+        }
+    }
+
+    private void addKeyBindings() {
         JPanel panel = (JPanel) frame.getContentPane();
-        Component[] components = panel.getComponents();
 
         // Touches du pavé numérique (ordre 789 / 456 / 123)
         int[] keys = {
@@ -76,17 +181,16 @@ public class SoundBoardUI {
                 KeyEvent.VK_NUMPAD1, KeyEvent.VK_NUMPAD2, KeyEvent.VK_NUMPAD3
         };
 
-        for (int i = 0; i < pads.length; i++) {
+        for (int i = 0; i < 9; i++) {
             final int index = i;
-            JButton btn = (JButton) components[i];
+            JButton btn = padButtons[i];
 
-            // couleur "par défaut" selon ton thème
-            final Color defaultColor = UIManager.getColor("Button.background");
+            // Couleur par défaut
+            final Color defaultColor = DarkTheme.BUTTON_BG;
 
-            // Listener unique pour clic souris
+            // Listener pour clic souris
             btn.addActionListener(e -> {
-                player.play(pads[index].getFilePath());
-                flashButton(btn, defaultColor, true);
+                playPad(index, btn, defaultColor, true);
             });
 
             // Raccourci clavier
@@ -97,11 +201,44 @@ public class SoundBoardUI {
                     .put("play" + i, new AbstractAction() {
                         @Override
                         public void actionPerformed(java.awt.event.ActionEvent e) {
-                            player.play(pads[index].getFilePath());
-                            flashButton(btn, defaultColor, false);
+                            playPad(index, btn, defaultColor, false);
                         }
                     });
         }
+    }
+
+    private void playPad(int index, JButton btn, Color defaultColor, boolean fromMouse) {
+        SoundKit currentKit = kitManager.getCurrentKit();
+        if (currentKit == null) return;
+        
+        List<SoundPad> pads = currentKit.getPads();
+        if (index >= pads.size()) return; // Pas de pad à cette position
+        
+        SoundPad pad = pads.get(index);
+        if (pad == null) return;
+        
+        // Vérifier si le pad est activé (pour la version enrichie)
+        try {
+            Boolean enabled = (Boolean) pad.getClass().getMethod("isEnabled").invoke(pad);
+            if (!enabled) return;
+        } catch (Exception e) {
+            // Fallback: considérer comme activé
+        }
+        
+        // Valider le fichier
+        try {
+            Boolean valid = (Boolean) pad.getClass().getMethod("isFileValid").invoke(pad);
+            if (!valid) {
+                System.err.println("Invalid audio file: " + pad.getFilePath());
+                return;
+            }
+        } catch (Exception e) {
+            // Fallback: essayer de jouer quand même
+        }
+        
+        // Jouer le son
+        player.play(pad.getFilePath());
+        flashButton(btn, defaultColor, fromMouse);
     }
 
     private void flashButton(JButton btn, Color defaultColor, boolean fromMouse) {
@@ -117,6 +254,22 @@ public class SoundBoardUI {
         });
         t.setRepeats(false);
         t.start();
+    }
+
+    // Méthodes publiques pour l'interaction externe
+    public void switchToKit(String kitName) {
+        if (kitManager.switchToKit(kitName)) {
+            loadCurrentKit();
+            kitSelector.setSelectedItem(kitName);
+        }
+    }
+    
+    public void refreshKits() {
+        kitSelector.removeAllItems();
+        for (String kitName : kitManager.getKitNames()) {
+            kitSelector.addItem(kitName);
+        }
+        loadCurrentKit();
     }
 
     public static void main(String[] args) {
