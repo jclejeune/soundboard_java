@@ -86,14 +86,14 @@ public class KitManager {
         
         String[] metalSounds = {
             "metalkick.wav", "grindcoresnare.wav", "ride.wav", 
-            "china.wav","crash.wav", "lotom.wav", 
-            "fx3slipknot.wav", "fx2.wav", "fx1.wav"
+            "china.wav","note1.wav", "note2.wav", 
+            "note3.wav", "note4.wav", "note5.wav"
         };
         
         String[] metalNames = {
             "MetalKick", "GrindSnare", "Ride", 
-            "China", "Crash", "LowTom", 
-            "FX3-Slipknot", "FX2", "FX1"
+            "China", "Note 1", "Note 2", 
+            "Note 3", "Note 4", "Note 5"
         };
         
         for (int i = 0; i < metalSounds.length; i++) {
